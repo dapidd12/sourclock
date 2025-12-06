@@ -1,0 +1,79 @@
+{
+  "name": "sourcelock-encryption",
+  "version": "1.0.0",
+  "description": "Platform enkripsi lengkap dengan cloud storage. Semua proses aman di browser Anda.",
+  "main": "app.js",
+  "scripts": {
+    "start": "live-server --port=3000 --open=/",
+    "dev": "live-server --port=3000 --watch=index.html,tailwind.css,app.js,config.js",
+    "build": "echo 'Build process not required for static site'",
+    "test": "echo 'No tests configured' && exit 0",
+    "lint": "eslint app.js config.js",
+    "format": "prettier --write \"**/*.{html,css,js,json}\"",
+    "deploy": "echo 'Deploy script - customize for your hosting service'",
+    "build:css": "postcss src/styles.css -o tailwind.css",
+    "watch:css": "postcss src/styles.css -o tailwind.css --watch"
+  },
+  "keywords": [
+    "encryption",
+    "decryption",
+    "crypto",
+    "security",
+    "cloud-storage",
+    "supabase",
+    "client-side",
+    "aes",
+    "caesar-cipher",
+    "vigenere-cipher"
+  ],
+  "author": "DAPID & ARYAPIW",
+  "contributors": [
+    "DAPID <https://dapid.my.id>",
+    "ARYAPIW <https://aryapiw.pages.id>"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/sourcelock-encryption.git"
+  },
+  "bugs": {
+    "url": "https://github.com/yourusername/sourcelock-encryption/issues"
+  },
+  "homepage": "https://github.com/yourusername/sourcelock-encryption#readme",
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "font-awesome": "^4.7.0"
+  },
+  "devDependencies": {
+    "live-server": "^1.2.2",
+    "eslint": "^8.48.0",
+    "prettier": "^3.0.3",
+    "autoprefixer": "^10.4.15",
+    "postcss": "^8.4.29",
+    "postcss-cli": "^10.1.0",
+    "tailwindcss": "^3.3.3"
+  },
+  "engines": {
+    "node": ">=14.0.0",
+    "npm": ">=6.0.0"
+  },
+  "browserslist": [
+    "> 1%",
+    "last 2 versions",
+    "not dead"
+  ],
+  "files": [
+    "index.html",
+    "tailwind.css",
+    "app.js",
+    "config.js",
+    "README.md",
+    "LICENSE"
+  ],
+  "private": true,
+  "config": {
+    "supabase_url": "https://your-project.supabase.co",
+    "supabase_anon_key": "your-anon-key",
+    "port": 3000
+  }
+}

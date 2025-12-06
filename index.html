@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SourceLock - Enkripsi & Dekripsi Lengkap</title>
+    <link rel="stylesheet" href="tailwind.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Supabase -->
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <div class="container">
+        <!-- Running Text -->
+        <div class="running-text-container">
+            <div class="running-text-content">
+                <div class="running-text-item">
+                    <i class="fas fa-shield-alt"></i>
+                    <span>SourceLock - Enkripsi Aman dengan Cloud Storage</span>
+                </div>
+                <div class="running-text-item">
+                    <i class="fas fa-bolt"></i>
+                    <span>Dekripsi Otomatis dengan AI Detection</span>
+                </div>
+                <div class="running-text-item">
+                    <i class="fas fa-cloud"></i>
+                    <span>Simpan Data di Cloud Supabase dengan Aman</span>
+                </div>
+                <div class="running-text-item">
+                    <i class="fas fa-mobile-alt"></i>
+                    <span>100% Client-Side - Tanpa Server Middleman</span>
+                </div>
+                <div class="running-text-item">
+                    <i class="fas fa-history"></i>
+                    <span>Riwayat Enkripsi Tersimpan di Browser Anda</span>
+                </div>
+            </div>
+        </div>
+        
+        <div class="header-container">
+            <div>
+                <div style="display: flex; align-items: center; gap: 20px; margin-bottom: 10px;">
+                    <div class="logo">
+                        <i class="fas fa-lock"></i>
+                    </div>
+                    <div>
+                        <h1>SourceLock</h1>
+                        <p class="tagline">Platform enkripsi lengkap dengan cloud storage. Semua proses aman di browser Anda.</p>
+                        <div class="cloud-status" id="cloud-status">
+                            <i class="fas fa-cloud"></i>
+                            <span>Menghubungkan ke Supabase...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="theme-toggle" id="theme-toggle">
+                <i class="fas fa-moon"></i>
+                <span>Mode Gelap</span>
+            </div>
+        </div>
+        
+        <div class="info-box">
+            <h3><i class="fas fa-info-circle"></i> Informasi Penting</h3>
+            <p>SourceLock menggunakan enkripsi client-side yang aman. Data dienkripsi di browser Anda sebelum dikirim ke cloud Supabase.</p>
+            <p><strong>Fitur Cloud:</strong> Simpan data terenkripsi di cloud dan akses dari mana saja dengan kunci yang benar.</p>
+            <p><strong>Dekripsi Otomatis:</strong> Sistem mendeteksi metode enkripsi secara otomatis saat dekripsi.</p>
+        </div>
+        
+        <div class="tabs-container">
+            <div class="tabs">
+                <button class="tab active" data-tab="text">Enkripsi Teks</button>
+                <button class="tab" data-tab="file">Enkripsi File</button>
+                <button class="tab" data-tab="decrypt">Dekripsi Data</button>
+                <button class="tab" data-tab="cloud">Cloud Storage</button>
+                <button class="tab" data-tab="tools">Alat Tambahan</button>
+            </div>
+            
+            <div class="content-area">
+                <!-- Tab Enkripsi Teks -->
+                <div class="tab-content active" id="text-tab">
+                    <div class="form-container">
+                        <div class="input-group">
+                            <label for="text-method"><i class="fas fa-key"></i> Pilih Metode Enkripsi:</label>
+                            <select id="text-method">
+                                <option value="caesar">Caesar Cipher</option>
+                                <option value="vigenere">Vigenere Cipher</option>
+                                <option value="base64">Base64 Encoding</option>
+                                <option value="aes">AES-256 (Advanced)</option>
+                                <option value="xor">XOR Cipher</option>
+                            </select>
+                        </div>
+                        
+                        <div class="input-group">
+                            <label for="encryption-key">
+                                <i class="fas fa-lock"></i> Kunci Enkripsi:
+                                <span class="info-tooltip" data-tooltip="Gunakan kunci yang kuat minimal 8 karakter">
+                                    <i class="fas fa-question-circle" style="color: var(--gray); margin-left: 5px;"></i>
+                                </span>
+                            </label>
+                            <input type="password" id="encryption-key" placeholder="Masukkan kunci enkripsi">
+                            <small style="color: var(--gray); margin-top: 5px; display: block;">*Untuk Caesar Cipher, kunci adalah angka (default: 3)</small>
+                            
+                            <!-- Key Strength Indicator -->
+                            <div class="key-strength-container">
+                                <div class="key-strength-indicator">
+                                    <div class="strength-bar">
+                                        <div class="strength-level" id="key-strength-bar"></div>
+                                    </div>
+                                    <div class="strength-text" id="key-strength-text">Kekuatan: -</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="input-group full-width">
+                        <label for="text-input"><i class="fas fa-edit"></i> Teks yang akan dienkripsi:</label>
+                        <textarea id="text-input" placeholder="Masukkan teks yang ingin dienkripsi di sini..."></textarea>
+                    </div>
+                    
+                    <!-- Progress Bar -->
+                    <div class="progress-container" id="text-progress">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="text-progress-fill"></div>
+                        </div>
+                        <div class="progress-text" id="text-progress-text">0%</div>
+                    </div>
+                    
+                    <div class="button-group">
+                        <button class="encrypt-btn" id="encrypt-text-btn">
+                            <i class="fas fa-lock"></i> Enkripsi Teks
+                        </button>
+                        <button class="clear-btn" id="clear-text-btn">
+                            <i class="fas fa-broom"></i> Bersihkan
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Tab Enkripsi File -->
+                <div class="tab-content" id="file-tab">
+                    <div class="form-container">
+                        <div class="input-group">
+                            <label for="file-method"><i class="fas fa-key"></i> Pilih Metode Enkripsi:</label>
+                            <select id="file-method">
+                                <option value="base64">Base64 Encoding</option>
+                                <option value="xor">XOR Cipher</option>
+                                <option value="aes">AES-256 (Advanced)</option>
+                            </select>
+                        </div>
+                        
+                        <div class="input-group">
+                            <label for="file-key"><i class="fas fa-lock"></i> Kunci Enkripsi:</label>
+                            <input type="password" id="file-key" placeholder="Masukkan kunci enkripsi (password)">
+                        </div>
+                    </div>
+                    
+                    <div class="input-group full-width">
+                        <label><i class="fas fa-file"></i> Pilih File (Max 10MB):</label>
+                        <div class="file-input-container" id="file-drop-area">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <p>Klik untuk memilih file atau tarik file ke sini</p>
+                            <p>Mendukung multiple files (batch mode)</p>
+                            <p class="file-name" id="file-name">Belum ada file yang dipilih</p>
+                            <input type="file" id="file-input" multiple>
+                        </div>
+                        
+                        <!-- File List for Batch Mode -->
+                        <div class="file-list" id="file-list"></div>
+                    </div>
+                    
+                    <!-- Progress Bar -->
+                    <div class="progress-container" id="file-progress">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="file-progress-fill"></div>
+                        </div>
+                        <div class="progress-text" id="file-progress-text">0%</div>
+                    </div>
+                    
+                    <div class="button-group">
+                        <button class="encrypt-btn" id="encrypt-file-btn">
+                            <i class="fas fa-lock"></i> Enkripsi File
+                        </button>
+                        <button class="clear-btn" id="clear-file-btn">
+                            <i class="fas fa-broom"></i> Bersihkan
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Tab Dekripsi -->
+                <div class="tab-content" id="decrypt-tab">
+                    <div class="detection-info">
+                        <i class="fas fa-robot"></i>
+                        <strong>Sistem Deteksi Otomatis:</strong> Sistem akan mendeteksi metode enkripsi yang digunakan secara otomatis. Pastikan Anda memiliki kunci dekripsi yang benar.
+                    </div>
+                    
+                    <div class="form-container">
+                        <div class="input-group">
+                            <label for="decryption-key"><i class="fas fa-key"></i> Kunci Dekripsi:</label>
+                            <input type="password" id="decryption-key" placeholder="Masukkan kunci dekripsi (password)">
+                        </div>
+                        
+                        <div class="input-group">
+                            <label><i class="fas fa-file-import"></i> Pilih File Terenkripsi:</label>
+                            <div class="file-input-container" id="decrypt-file-drop-area">
+                                <i class="fas fa-file-import"></i>
+                                <p>Klik untuk memilih file terenkripsi</p>
+                                <p class="file-name" id="decrypt-file-name">Belum ada file yang dipilih</p>
+                                <input type="file" id="decrypt-file-input">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="input-group full-width">
+                        <label for="decrypt-input"><i class="fas fa-edit"></i> Atau masukkan data terenkripsi:</label>
+                        <textarea id="decrypt-input" placeholder="Masukkan data terenkripsi di sini..."></textarea>
+                    </div>
+                    
+                    <!-- Progress Bar -->
+                    <div class="progress-container" id="decrypt-progress">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="decrypt-progress-fill"></div>
+                        </div>
+                        <div class="progress-text" id="decrypt-progress-text">0%</div>
+                    </div>
+                    
+                    <div class="button-group">
+                        <button class="decrypt-btn" id="decrypt-btn">
+                            <i class="fas fa-unlock"></i> Dekripsi Data
+                        </button>
+                        <button class="clear-btn" id="clear-decrypt-btn">
+                            <i class="fas fa-broom"></i> Bersihkan
+                        </button>
+                    </div>
+                </div>
+                
+                <!-- Tab Cloud Storage -->
+                <div class="tab-content" id="cloud-tab">
+                    <div class="cloud-storage-tab">
+                        <h3><i class="fas fa-database"></i> Cloud Storage Supabase</h3>
+                        <p>Simpan data terenkripsi Anda di cloud untuk akses dari mana saja. Data dienkripsi sebelum dikirim ke server.</p>
+                        
+                        <div class="cloud-actions">
+                            <button class="encrypt-btn" id="refresh-cloud-btn">
+                                <i class="fas fa-sync-alt"></i> Refresh Data
+                            </button>
+                            <button class="decrypt-btn" id="upload-to-cloud-btn">
+                                <i class="fas fa-cloud-upload-alt"></i> Upload ke Cloud
+                            </button>
+                        </div>
+                        
+                        <div class="storage-items" id="storage-items">
+                            <!-- Items will be loaded here -->
+                            <p style="text-align: center; color: var(--gray);">Memuat data dari cloud...</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Tab Alat Tambahan -->
+                <div class="tab-content" id="tools-tab">
+                    <div class="form-container">
+                        <!-- Key Generator -->
+                        <div class="input-group">
+                            <label><i class="fas fa-key"></i> Generator Kunci Aman</label>
+                            <div class="key-generator">
+                                <label>
+                                    <span>Panjang Kunci: <span id="key-length-value">32</span> karakter</span>
+                                    <input type="range" min="8" max="128" value="32" id="key-length">
+                                </label>
+                                <div>
+                                    <input type="checkbox" id="include-numbers" checked>
+                                    <label for="include-numbers" style="display: inline; margin-left: 5px;">Angka</label>
+                                    
+                                    <input type="checkbox" id="include-symbols" checked style="margin-left: 15px;">
+                                    <label for="include-symbols" style="display: inline; margin-left: 5px;">Simbol</label>
+                                    
+                                    <input type="checkbox" id="include-uppercase" checked style="margin-left: 15px;">
+                                    <label for="include-uppercase" style="display: inline; margin-left: 5px;">Huruf Besar</label>
+                                </div>
+                                <button id="generate-key" style="margin-top: 15px; width: 100%;">
+                                    <i class="fas fa-random"></i> Generate Secure Key
+                                </button>
+                                <div class="generated-key" id="generated-key">
+                                    Klik "Generate Secure Key" untuk membuat kunci
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- History Manager -->
+                        <div class="input-group">
+                            <label><i class="fas fa-history"></i> Riwayat Enkripsi Lokal</label>
+                            <div class="key-generator">
+                                <p>Riwayat enkripsi disimpan di browser Anda (localStorage).</p>
+                                <button id="view-history-btn" style="margin-top: 10px; width: 100%;">
+                                    <i class="fas fa-list"></i> Lihat Riwayat
+                                </button>
+                                <button id="clear-history-btn" style="margin-top: 10px; width: 100%; background-color: var(--danger);">
+                                    <i class="fas fa-trash"></i> Hapus Semua Riwayat
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Self-Destruct Feature -->
+                    <div class="input-group full-width">
+                        <label><i class="fas fa-hourglass-end"></i> Mode Self-Destruct</label>
+                        <div class="key-generator">
+                            <p>Data akan hancur sendiri setelah waktu tertentu.</p>
+                            <label style="margin-top: 15px;">
+                                <span>Waktu hidup: <span id="self-destruct-time">24</span> jam</span>
+                                <input type="range" min="1" max="168" value="24" id="self-destruct-slider">
+                            </label>
+                            <button id="create-self-destruct-btn" style="margin-top: 15px; width: 100%; background-color: var(--warning);">
+                                <i class="fas fa-bomb"></i> Buat Self-Destruct Data
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Credits -->
+        <div class="credits">
+            <h3><i class="fas fa-heart"></i> Credits & Development</h3>
+            <div class="credit-links">
+                <a href="https://dapid.my.id" target="_blank" class="credit-link">
+                    <i class="fas fa-globe"></i> DAPID Website
+                </a>
+                <a href="https://aryapiw.pages.id" target="_blank" class="credit-link">
+                    <i class="fas fa-code"></i> ARYAPIW Portfolio
+                </a>
+            </div>
+        </div>
+        
+        <footer>
+            <div class="footer-info">
+                <p>© 2023 SourceLock - Enkripsi & Dekripsi Lengkap. Semua hak cipta dilindungi.</p>
+                <p>Website ini berjalan sepenuhnya di browser Anda dengan integrasi Supabase Cloud.</p>
+                
+                <div class="method-badges">
+                    <div class="badge">Caesar Cipher</div>
+                    <div class="badge">Vigenere Cipher</div>
+                    <div class="badge">Base64</div>
+                    <div class="badge">AES-256</div>
+                    <div class="badge">XOR Cipher</div>
+                    <div class="badge">Dekripsi Otomatis</div>
+                    <div class="badge">Cloud Storage</div>
+                    <div class="badge">Self-Destruct</div>
+                </div>
+            </div>
+        </footer>
+    </div>
+    
+    <!-- Toast Container -->
+    <div class="toast-container" id="toast-container"></div>
+    
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loading-overlay">
+        <div>
+            <div class="loading-spinner"></div>
+            <div class="loading-text" id="loading-text">Memproses...</div>
+        </div>
+    </div>
+    
+    <!-- Confirmation Dialog -->
+    <div class="confirmation-overlay" id="confirmation-overlay">
+        <div class="confirmation-dialog">
+            <p id="confirmation-message">Anda yakin ingin melanjutkan?</p>
+            <div class="dialog-actions">
+                <button class="btn-cancel" id="confirmation-cancel">Batal</button>
+                <button class="btn-confirm" id="confirmation-confirm">Ya, Lanjutkan</button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Guide Overlay -->
+    <div class="guide-overlay" id="guide-overlay">
+        <div class="guide-content">
+            <h3><i class="fas fa-graduation-cap"></i> Panduan SourceLock</h3>
+            <div class="guide-step">
+                <h5>1. Enkripsi Teks</h5>
+                <p>Pilih metode enkripsi, masukkan kunci, dan teks yang ingin dienkripsi.</p>
+            </div>
+            <div class="guide-step">
+                <h5>2. Cloud Storage</h5>
+                <p>Simpan data terenkripsi di Supabase Cloud untuk akses dari mana saja.</p>
+            </div>
+            <div class="guide-step">
+                <h5>3. Dekripsi Otomatis</h5>
+                <p>Sistem akan mendeteksi metode enkripsi secara otomatis.</p>
+            </div>
+            <button class="modal-btn close-btn" id="close-guide-btn" style="width: 100%; margin-top: 20px;">
+                <i class="fas fa-times"></i> Tutup Panduan
+            </button>
+        </div>
+    </div>
+    
+    <!-- Modal untuk Hasil Enkripsi -->
+    <div class="modal-overlay" id="result-modal">
+        <div class="modal">
+            <div class="modal-header">
+                <h2><i class="fas fa-check-circle"></i> Enkripsi Berhasil</h2>
+                <button class="close-modal" id="close-modal">&times;</button>
+            </div>
+            <div class="modal-content">
+                <div class="result-summary">
+                    <div class="summary-item">
+                        <i class="fas fa-key"></i>
+                        <div class="summary-label">Metode Enkripsi</div>
+                        <div class="summary-value" id="modal-method">AES-256</div>
+                    </div>
+                    <div class="summary-item">
+                        <i class="fas fa-file"></i>
+                        <div class="summary-label">Jenis Data</div>
+                        <div class="summary-value" id="modal-data-type">Teks</div>
+                    </div>
+                    <div class="summary-item">
+                        <i class="fas fa-weight-hanging"></i>
+                        <div class="summary-label">Ukuran Data</div>
+                        <div class="summary-value" id="modal-data-size">1.2 KB</div>
+                    </div>
+                    <div class="summary-item">
+                        <i class="fas fa-clock"></i>
+                        <div class="summary-label">Waktu Proses</div>
+                        <div class="summary-value" id="modal-process-time">0.15s</div>
+                    </div>
+                </div>
+                
+                <div class="encrypted-preview">
+                    <h3>Pratinjau Data Terenkripsi:</h3>
+                    <div class="preview-text" id="modal-preview">
+                        Data terenkripsi akan muncul di sini...
+                    </div>
+                </div>
+                
+                <div class="modal-actions">
+                    <button class="modal-btn copy-btn" id="modal-copy-btn">
+                        <i class="fas fa-copy"></i> Salin Data
+                    </button>
+                    <button class="modal-btn download-btn" id="modal-download-btn">
+                        <i class="fas fa-download"></i> Unduh File
+                    </button>
+                    <button class="modal-btn save-cloud-btn" id="modal-save-cloud-btn">
+                        <i class="fas fa-cloud-upload-alt"></i> Simpan ke Cloud
+                    </button>
+                    <button class="modal-btn close-btn" id="modal-close-btn">
+                        <i class="fas fa-times"></i> Tutup
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+</body>
+</html>
