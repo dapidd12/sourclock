@@ -3,8 +3,8 @@
 const AppConfig = {
     // Konfigurasi Supabase Database
     SUPABASE: {
-        URL: 'https://your-project.supabase.co', // Ganti dengan URL Supabase Anda
-        ANON_KEY: 'your-anon-key', // Ganti dengan API Key Anda
+        URL: 'https://cnrbjnfqqceeprecnrsx.supabase.co', // Ganti dengan URL Supabase Anda
+        ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNucmJqbmZxcWNlZXByZWNucnN4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUwNTAxNDAsImV4cCI6MjA4MDYyNjE0MH0.zgYXyoDES55wiN-Z6oTIIqDJ_vSwQxqFi1CDNe3tKgA', // Ganti dengan API Key Anda
         TABLE_NAME: 'encrypted_data',
         SCHEMA: 'public'
     },
