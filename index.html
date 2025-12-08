@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SourceLock - Enkripsi & Dekripsi Lengkap</title>
+    <title>SourceLock - Enkripsi & Dekripsi Lengkap v1.0.4</title>
     <link rel="stylesheet" href="tailwind.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <!-- Supabase -->
@@ -16,7 +16,7 @@
             <div class="running-text-content">
                 <div class="running-text-item">
                     <i class="fas fa-shield-alt"></i>
-                    <span>SourceLock - Enkripsi Aman dengan Cloud Storage</span>
+                    <span>SourceLock v1.0.4 - Base64 Sekarang Aman dengan Proteksi Kunci!</span>
                 </div>
                 <div class="running-text-item">
                     <i class="fas fa-bolt"></i>
@@ -31,8 +31,8 @@
                     <span>100% Client-Side - Tanpa Server Middleman</span>
                 </div>
                 <div class="running-text-item">
-                    <i class="fas fa-history"></i>
-                    <span>Riwayat Enkripsi Tersimpan di Browser Anda</span>
+                    <i class="fas fa-lock"></i>
+                    <span>Base64 dengan Proteksi - Tidak Bisa Dibuka Tanpa Kunci</span>
                 </div>
             </div>
         </div>
@@ -45,7 +45,7 @@
                     </div>
                     <div>
                         <h1>SourceLock</h1>
-                        <p class="tagline">Platform enkripsi lengkap dengan cloud storage. Semua proses aman di browser Anda.</p>
+                        <p class="tagline">Platform enkripsi lengkap dengan cloud storage. Base64 sekarang aman dengan proteksi kunci!</p>
                         <div class="cloud-status" id="cloud-status">
                             <i class="fas fa-cloud"></i>
                             <span>Menghubungkan ke Supabase...</span>
@@ -60,10 +60,14 @@
         </div>
         
         <div class="info-box">
-            <h3><i class="fas fa-info-circle"></i> Informasi Penting</h3>
-            <p>SourceLock menggunakan enkripsi client-side yang aman. Data dienkripsi di browser Anda sebelum dikirim ke cloud Supabase.</p>
+            <h3><i class="fas fa-info-circle"></i> Informasi Penting - Perbaikan Base64</h3>
+            <p><strong>Perbaikan Keamanan Base64:</strong> Base64 sekarang menggunakan proteksi tambahan dengan kunci. Data Base64 tidak bisa lagi didekripsi dengan kunci yang salah.</p>
             <p><strong>Fitur Cloud:</strong> Simpan data terenkripsi di cloud dan akses dari mana saja dengan kunci yang benar.</p>
-            <p><strong>Dekripsi Otomatis:</strong> Sistem mendeteksi metode enkripsi secara otomatis saat dekripsi.</p>
+            <p><strong>Kunci Aman:</strong> Kunci enkripsi disimpan secara aman di database dan diperlukan untuk dekripsi.</p>
+            <p><strong>Cloud Global:</strong> Semua file terenkripsi tersedia secara publik, tetapi hanya dapat didekripsi dengan kunci yang benar.</p>
+            <p style="color: var(--warning); font-weight: bold; margin-top: 10px;">
+                <i class="fas fa-exclamation-triangle"></i> Base64 tanpa kunci akan menampilkan peringatan keamanan.
+            </p>
         </div>
         
         <div class="tabs-container">
@@ -84,10 +88,13 @@
                             <select id="text-method">
                                 <option value="caesar">Caesar Cipher</option>
                                 <option value="vigenere">Vigenere Cipher</option>
-                                <option value="base64">Base64 Encoding</option>
+                                <option value="base64">Base64 Encoding (dengan proteksi)</option>
                                 <option value="aes">AES-256 (Advanced)</option>
                                 <option value="xor">XOR Cipher</option>
                             </select>
+                            <small style="color: var(--warning); margin-top: 5px; display: block; font-weight: bold;">
+                                <i class="fas fa-exclamation-triangle"></i> Base64 sekarang membutuhkan kunci untuk keamanan
+                            </small>
                         </div>
                         
                         <div class="input-group">
@@ -99,6 +106,9 @@
                             </label>
                             <input type="password" id="encryption-key" placeholder="Masukkan kunci enkripsi">
                             <small style="color: var(--gray); margin-top: 5px; display: block;">*Untuk Caesar Cipher, kunci adalah angka (default: 3)</small>
+                            <small style="color: var(--warning); margin-top: 5px; display: block;">
+                                *Base64: Gunakan kunci minimal 4 karakter untuk proteksi
+                            </small>
                             
                             <!-- Key Strength Indicator -->
                             <div class="key-strength-container">
@@ -114,7 +124,7 @@
                     
                     <div class="input-group full-width">
                         <label for="text-input"><i class="fas fa-edit"></i> Teks yang akan dienkripsi:</label>
-                        <textarea id="text-input" placeholder="Masukkan teks yang ingin dienkripsi di sini..."></textarea>
+                        <textarea id="text-input" placeholder="Masukkan teks yang ingin dienkripsi di sini..." oninput="this.value = this.value.replace(/\t/g, '    ');"></textarea>
                     </div>
                     
                     <!-- Progress Bar -->
@@ -141,15 +151,21 @@
                         <div class="input-group">
                             <label for="file-method"><i class="fas fa-key"></i> Pilih Metode Enkripsi:</label>
                             <select id="file-method">
-                                <option value="base64">Base64 Encoding</option>
+                                <option value="base64">Base64 Encoding (dengan proteksi)</option>
                                 <option value="xor">XOR Cipher</option>
                                 <option value="aes">AES-256 (Advanced)</option>
                             </select>
+                            <small style="color: var(--warning); margin-top: 5px; display: block;">
+                                <i class="fas fa-exclamation-triangle"></i> Base64 file membutuhkan kunci untuk keamanan
+                            </small>
                         </div>
                         
                         <div class="input-group">
                             <label for="file-key"><i class="fas fa-lock"></i> Kunci Enkripsi:</label>
                             <input type="password" id="file-key" placeholder="Masukkan kunci enkripsi (password)">
+                            <small style="color: var(--warning); margin-top: 5px; display: block;">
+                                *Wajib untuk Base64 agar file tidak bisa dibuka tanpa kunci
+                            </small>
                         </div>
                     </div>
                     
@@ -189,13 +205,16 @@
                 <div class="tab-content" id="decrypt-tab">
                     <div class="detection-info">
                         <i class="fas fa-robot"></i>
-                        <strong>Sistem Deteksi Otomatis:</strong> Sistem akan mendeteksi metode enkripsi yang digunakan secara otomatis. Pastikan Anda memiliki kunci dekripsi yang benar.
+                        <strong>Sistem Deteksi Otomatis:</strong> Sistem akan mendeteksi metode enkripsi yang digunakan secara otomatis. Base64 dengan proteksi membutuhkan kunci yang benar.
                     </div>
                     
                     <div class="form-container">
                         <div class="input-group">
                             <label for="decryption-key"><i class="fas fa-key"></i> Kunci Dekripsi:</label>
                             <input type="password" id="decryption-key" placeholder="Masukkan kunci dekripsi (password)">
+                            <small style="color: var(--warning); margin-top: 5px; display: block;">
+                                <i class="fas fa-exclamation-triangle"></i> Base64 dengan proteksi membutuhkan kunci
+                            </small>
                         </div>
                         
                         <div class="input-group">
@@ -211,7 +230,7 @@
                     
                     <div class="input-group full-width">
                         <label for="decrypt-input"><i class="fas fa-edit"></i> Atau masukkan data terenkripsi:</label>
-                        <textarea id="decrypt-input" placeholder="Masukkan data terenkripsi di sini..."></textarea>
+                        <textarea id="decrypt-input" placeholder="Masukkan data terenkripsi di sini..." oninput="this.value = this.value.replace(/\t/g, '    ');"></textarea>
                     </div>
                     
                     <!-- Progress Bar -->
@@ -236,14 +255,15 @@
                 <div class="tab-content" id="cloud-tab">
                     <div class="cloud-storage-tab">
                         <h3><i class="fas fa-database"></i> Cloud Storage Supabase</h3>
-                        <p>Simpan data terenkripsi Anda di cloud untuk akses dari mana saja. Data dienkripsi sebelum dikirim ke server.</p>
+                        <p>Semua file terenkripsi disimpan di cloud dan dapat dilihat oleh semua pengguna. Hanya pengguna dengan kunci yang benar yang dapat mendekripsi file.</p>
+                        <div class="detection-info" style="margin-bottom: 20px;">
+                            <i class="fas fa-shield-alt"></i>
+                            <strong>Perbaikan Keamanan:</strong> Base64 di cloud sekarang dilindungi dengan proteksi kunci. File tidak bisa didekripsi tanpa kunci yang benar.
+                        </div>
                         
                         <div class="cloud-actions">
                             <button class="encrypt-btn" id="refresh-cloud-btn">
                                 <i class="fas fa-sync-alt"></i> Refresh Data
-                            </button>
-                            <button class="decrypt-btn" id="upload-to-cloud-btn">
-                                <i class="fas fa-cloud-upload-alt"></i> Upload ke Cloud
                             </button>
                         </div>
                         
@@ -283,35 +303,6 @@
                                 </div>
                             </div>
                         </div>
-                        
-                        <!-- History Manager -->
-                        <div class="input-group">
-                            <label><i class="fas fa-history"></i> Riwayat Enkripsi Lokal</label>
-                            <div class="key-generator">
-                                <p>Riwayat enkripsi disimpan di browser Anda (localStorage).</p>
-                                <button id="view-history-btn" style="margin-top: 10px; width: 100%;">
-                                    <i class="fas fa-list"></i> Lihat Riwayat
-                                </button>
-                                <button id="clear-history-btn" style="margin-top: 10px; width: 100%; background-color: var(--danger);">
-                                    <i class="fas fa-trash"></i> Hapus Semua Riwayat
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                    
-                    <!-- Self-Destruct Feature -->
-                    <div class="input-group full-width">
-                        <label><i class="fas fa-hourglass-end"></i> Mode Self-Destruct</label>
-                        <div class="key-generator">
-                            <p>Data akan hancur sendiri setelah waktu tertentu.</p>
-                            <label style="margin-top: 15px;">
-                                <span>Waktu hidup: <span id="self-destruct-time">24</span> jam</span>
-                                <input type="range" min="1" max="168" value="24" id="self-destruct-slider">
-                            </label>
-                            <button id="create-self-destruct-btn" style="margin-top: 15px; width: 100%; background-color: var(--warning);">
-                                <i class="fas fa-bomb"></i> Buat Self-Destruct Data
-                            </button>
-                        </div>
                     </div>
                 </div>
             </div>
@@ -332,18 +323,21 @@
         
         <footer>
             <div class="footer-info">
-                <p>© 2023 SourceLock - Enkripsi & Dekripsi Lengkap. Semua hak cipta dilindungi.</p>
+                <p>© 2023 SourceLock v1.0.4 - Enkripsi & Dekripsi Lengkap. Semua hak cipta dilindungi.</p>
                 <p>Website ini berjalan sepenuhnya di browser Anda dengan integrasi Supabase Cloud.</p>
+                <p style="color: var(--success); font-weight: bold; margin-top: 10px;">
+                    <i class="fas fa-shield-alt"></i> Base64 sekarang aman dengan proteksi kunci - Tidak bisa didekripsi tanpa kunci!
+                </p>
                 
                 <div class="method-badges">
                     <div class="badge">Caesar Cipher</div>
                     <div class="badge">Vigenere Cipher</div>
-                    <div class="badge">Base64</div>
+                    <div class="badge">Base64 (Aman)</div>
                     <div class="badge">AES-256</div>
                     <div class="badge">XOR Cipher</div>
                     <div class="badge">Dekripsi Otomatis</div>
                     <div class="badge">Cloud Storage</div>
-                    <div class="badge">Self-Destruct</div>
+                    <div class="badge">Kunci Terenkripsi</div>
                 </div>
             </div>
         </footer>
@@ -374,18 +368,19 @@
     <!-- Guide Overlay -->
     <div class="guide-overlay" id="guide-overlay">
         <div class="guide-content">
-            <h3><i class="fas fa-graduation-cap"></i> Panduan SourceLock</h3>
+            <h3><i class="fas fa-graduation-cap"></i> Panduan SourceLock v1.0.4</h3>
             <div class="guide-step">
-                <h5>1. Enkripsi Teks</h5>
-                <p>Pilih metode enkripsi, masukkan kunci, dan teks yang ingin dienkripsi.</p>
+                <h5>1. Enkripsi Teks/File</h5>
+                <p>Pilih metode enkripsi, masukkan kunci, dan data yang ingin dienkripsi.</p>
+                <p><strong>Perubahan:</strong> Base64 sekarang membutuhkan kunci untuk proteksi.</p>
             </div>
             <div class="guide-step">
-                <h5>2. Cloud Storage</h5>
-                <p>Simpan data terenkripsi di Supabase Cloud untuk akses dari mana saja.</p>
+                <h5>2. Cloud Storage Global</h5>
+                <p>Semua file terenkripsi tersedia secara publik di cloud. Base64 dilindungi dengan kunci.</p>
             </div>
             <div class="guide-step">
-                <h5>3. Dekripsi Otomatis</h5>
-                <p>Sistem akan mendeteksi metode enkripsi secara otomatis.</p>
+                <h5>3. Dekripsi dengan Kunci</h5>
+                <p>Unduh file dari cloud dan dekripsi dengan kunci yang sesuai. Base64 tidak bisa dibuka tanpa kunci.</p>
             </div>
             <button class="modal-btn close-btn" id="close-guide-btn" style="width: 100%; margin-top: 20px;">
                 <i class="fas fa-times"></i> Tutup Panduan

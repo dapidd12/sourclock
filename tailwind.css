@@ -993,7 +993,44 @@ footer {
     font-size: 0.85rem;
     font-weight: 600;
 }
+/* Tambahkan di akhir file tailwind.css */
 
+/* Cloud Decryption Modal */
+.file-info {
+    background-color: var(--light);
+    border-radius: 10px;
+    padding: 15px;
+    margin-bottom: 20px;
+    border: 1px solid var(--border-color);
+}
+
+.file-info h4 {
+    color: var(--primary);
+    margin-bottom: 10px;
+    font-size: 1.2rem;
+}
+
+.file-info p {
+    margin-bottom: 5px;
+    font-size: 0.95rem;
+}
+
+/* Responsive improvements */
+@media (max-width: 768px) {
+    .modal {
+        width: 95% !important;
+        margin: 10px;
+    }
+    
+    .modal-actions {
+        flex-direction: column;
+    }
+    
+    .modal-btn {
+        width: 100%;
+        margin-bottom: 10px;
+    }
+}
 /* Loading Overlay */
 .loading-overlay {
     position: fixed;

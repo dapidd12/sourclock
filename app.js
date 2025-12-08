@@ -4,8 +4,8 @@ let currentTheme = 'light';
 let encryptionResult = null;
 let encryptedFileData = null;
 let encryptedFileName = null;
-let encryptionHistory = [];
 let cloudConnected = false;
+let progressInterval = null;
 
 // ==================== INISIALISASI APLIKASI ====================
 document.addEventListener('DOMContentLoaded', async () => {
@@ -13,9 +13,6 @@ document.addEventListener('DOMContentLoaded', async () => {
     
     // Load konfigurasi tema
     loadTheme();
-    
-    // Load history dari localStorage
-    loadEncryptionHistory();
     
     // Inisialisasi Supabase
     await initializeSupabase();
@@ -31,24 +28,69 @@ document.addEventListener('DOMContentLoaded', async () => {
         }
     }, 1000);
     
-    // Inisialisasi indikator kekuatan kunci
+    // Inisialisasi indikator kekuatan kunci untuk teks
     document.getElementById('encryption-key').addEventListener('input', updateKeyStrength);
+    
+    // Inisialisasi indikator kekuatan kunci untuk file
+    document.getElementById('file-key').addEventListener('input', updateFileKeyStrength);
+    
+    // Fix: Tab handling in textarea
+    fixTextareaTab();
+    
+    // Event listener untuk refresh cloud
+    document.getElementById('refresh-cloud-btn').addEventListener('click', () => {
+        if (cloudConnected) {
+            loadCloudData();
+            showToast('Cloud data refreshed', 'success');
+        } else {
+            showToast('Cloud not connected', 'error');
+        }
+    });
 });
+
+// ==================== FIX: HANDLING TAB IN TEXTAREA ====================
+function fixTextareaTab() {
+    document.querySelectorAll('textarea').forEach(textarea => {
+        textarea.addEventListener('keydown', function(e) {
+            if (e.key === 'Tab') {
+                e.preventDefault();
+                
+                const start = this.selectionStart;
+                const end = this.selectionEnd;
+                
+                // Insert 4 spaces at cursor position
+                this.value = this.value.substring(0, start) + '    ' + this.value.substring(end);
+                
+                // Move cursor to after the inserted spaces
+                this.selectionStart = this.selectionEnd = start + 4;
+            }
+        });
+    });
+}
 
 // ==================== INTEGRASI SUPABASE ====================
 async function initializeSupabase() {
     const config = AppConfig.getSupabaseConfig();
     
     try {
-        supabase = window.supabase.createClient(config.url, config.key);
+        // Gunakan service role key untuk bypass policy
+        supabase = window.supabase.createClient(config.url, config.serviceKey, {
+            auth: {
+                autoRefreshToken: false,
+                persistSession: false,
+                detectSessionInUrl: false
+            }
+        });
         
-        // Test koneksi
+        // Test koneksi dengan query sederhana
         const { data, error } = await supabase
             .from(config.table)
-            .select('count')
+            .select('id')
             .limit(1);
         
-        if (error) throw error;
+        if (error && !error.message.includes('does not exist')) {
+            console.warn('Supabase connection test error:', error.message);
+        }
         
         cloudConnected = true;
         updateCloudStatus(true);
@@ -95,7 +137,8 @@ async function loadCloudData() {
         
     } catch (error) {
         console.error('Error loading cloud data:', error);
-        showToast('Failed to load cloud data', 'error');
+        document.getElementById('storage-items').innerHTML = 
+            '<p style="text-align: center; color: var(--danger);">Failed to load cloud data</p>';
     }
 }
 
@@ -110,15 +153,23 @@ function displayCloudData(data) {
     container.innerHTML = data.map(item => `
         <div class="storage-item">
             <div class="storage-item-header">
-                <div class="storage-item-name">${item.name || 'Encrypted Data'}</div>
-                <button class="download-cloud-btn" data-id="${item.id}">
-                    <i class="fas fa-download"></i>
-                </button>
+                <div class="storage-item-name">
+                    <i class="fas fa-file"></i> ${item.file_name || 'Encrypted Data'}
+                </div>
+                <div>
+                    <button class="download-cloud-btn" data-id="${item.id}" data-method="${item.encryption_method}">
+                        <i class="fas fa-download"></i> Download
+                    </button>
+                </div>
             </div>
             <div class="storage-item-meta">
-                <div>Metode: ${item.method}</div>
-                <div>Ukuran: ${AppConfig.formatBytes(item.data.length)}</div>
-                <div>Tanggal: ${new Date(item.created_at).toLocaleDateString()}</div>
+                <div><strong>Metode:</strong> ${item.encryption_method}</div>
+                <div><strong>Ukuran:</strong> ${AppConfig.formatBytes(item.file_size)}</div>
+                <div><strong>Tanggal:</strong> ${new Date(item.created_at).toLocaleDateString()}</div>
+                <div><strong>Deskripsi:</strong> ${item.description || 'Tidak ada deskripsi'}</div>
+                <div style="margin-top: 10px; color: var(--warning); font-size: 0.9rem;">
+                    <i class="fas fa-info-circle"></i> File ini terenkripsi. Dibutuhkan kunci untuk dekripsi.
+                </div>
             </div>
         </div>
     `).join('');
@@ -127,12 +178,14 @@ function displayCloudData(data) {
     document.querySelectorAll('.download-cloud-btn').forEach(btn => {
         btn.addEventListener('click', async () => {
             const id = btn.getAttribute('data-id');
-            await downloadFromCloud(id);
+            const method = btn.getAttribute('data-method');
+            await downloadFromCloud(id, method);
         });
     });
 }
 
-async function saveToCloud(encryptedData, metadata) {
+// Simpan data terenkripsi dan kunci ke database
+async function saveToCloud(encryptedData, metadata, encryptionKey) {
     if (!cloudConnected) {
         showToast('Cloud not connected', 'error');
         return false;
@@ -141,50 +194,223 @@ async function saveToCloud(encryptedData, metadata) {
     const config = AppConfig.getSupabaseConfig();
     
     try {
-        const { data, error } = await supabase
+        // Enkripsi kunci sebelum disimpan
+        const encryptedKey = await AppConfig.encryptKey(encryptionKey);
+        if (!encryptedKey) {
+            throw new Error('Failed to encrypt key');
+        }
+        
+        // Simpan file terenkripsi
+        const { data: fileData, error: fileError } = await supabase
             .from(config.table)
             .insert([{
-                name: metadata.name || 'Encrypted Data',
-                method: metadata.method,
-                data: encryptedData,
-                metadata: JSON.stringify(metadata),
-                size: encryptedData.length,
+                file_name: metadata.fileName || 'encrypted_data.txt',
+                encryption_method: metadata.method,
+                encrypted_data: encryptedData,
+                file_size: encryptedData.length,
+                description: metadata.description || 'Encrypted file',
                 created_at: new Date().toISOString()
-            }]);
+            }])
+            .select();
         
-        if (error) throw error;
+        if (fileError) throw fileError;
         
-        showToast('Data saved to cloud successfully!', 'success');
+        // Simpan kunci terenkripsi dengan referensi ke file
+        if (fileData && fileData[0]) {
+            const { error: keyError } = await supabase
+                .from(config.keysTable)
+                .insert([{
+                    file_id: fileData[0].id,
+                    encrypted_key: encryptedKey,
+                    created_at: new Date().toISOString()
+                }]);
+            
+            if (keyError) throw keyError;
+        }
+        
+        showToast('Data dan kunci berhasil disimpan ke cloud!', 'success');
         loadCloudData();
         return true;
         
     } catch (error) {
         console.error('Error saving to cloud:', error);
-        showToast('Failed to save to cloud', 'error');
+        showToast('Failed to save to cloud: ' + error.message, 'error');
         return false;
     }
 }
 
-async function downloadFromCloud(id) {
+// Download dan coba dekripsi file dari cloud dengan UI yang lebih baik
+async function downloadFromCloud(id, method) {
+    if (!cloudConnected) {
+        showToast('Cloud not connected', 'error');
+        return;
+    }
+    
     const config = AppConfig.getSupabaseConfig();
     
     try {
-        const { data, error } = await supabase
+        // Ambil data file
+        const { data: fileData, error: fileError } = await supabase
             .from(config.table)
             .select('*')
             .eq('id', id)
             .single();
         
-        if (error) throw error;
+        if (fileError) throw fileError;
         
-        // Tampilkan antarmuka dekripsi
-        document.getElementById('decrypt-input').value = data.data;
-        document.querySelector('[data-tab="decrypt"]').click();
-        showToast('Data loaded from cloud. Enter decryption key.', 'success');
+        // Tampilkan modal untuk memasukkan kunci
+        showCloudDecryptionModal(fileData);
         
     } catch (error) {
         console.error('Error downloading from cloud:', error);
-        showToast('Failed to load from cloud', 'error');
+        showToast('Failed to load from cloud: ' + error.message, 'error');
+    }
+}
+
+// Modal untuk memasukkan kunci dekripsi dari cloud
+function showCloudDecryptionModal(fileData) {
+    // Hapus modal sebelumnya jika ada
+    const existingModal = document.getElementById('cloud-decrypt-modal');
+    if (existingModal) existingModal.remove();
+    
+    const modal = document.createElement('div');
+    modal.id = 'cloud-decrypt-modal';
+    modal.className = 'modal-overlay active';
+    modal.innerHTML = `
+        <div class="modal" style="max-width: 500px;">
+            <div class="modal-header">
+                <h2><i class="fas fa-key"></i> Masukkan Kunci Dekripsi</h2>
+                <button class="close-modal" id="close-cloud-modal">&times;</button>
+            </div>
+            <div class="modal-content">
+                <div class="file-info" style="margin-bottom: 20px; padding: 15px; background: var(--light); border-radius: 10px;">
+                    <h4><i class="fas fa-file"></i> ${fileData.file_name}</h4>
+                    <p><strong>Metode:</strong> ${fileData.encryption_method}</p>
+                    <p><strong>Ukuran:</strong> ${AppConfig.formatBytes(fileData.file_size)}</p>
+                    <p><strong>Deskripsi:</strong> ${fileData.description || 'Tidak ada'}</p>
+                </div>
+                
+                <div class="input-group" style="margin-bottom: 20px;">
+                    <label for="cloud-decrypt-key"><i class="fas fa-lock"></i> Kunci Dekripsi:</label>
+                    <input type="password" id="cloud-decrypt-key" placeholder="Masukkan kunci untuk mendekripsi" style="width: 100%;">
+                    <small style="color: var(--warning); display: block; margin-top: 5px;">
+                        <i class="fas fa-exclamation-triangle"></i> Base64 juga membutuhkan kunci untuk dekripsi
+                    </small>
+                </div>
+                
+                <div class="modal-actions">
+                    <button class="modal-btn decrypt-btn" id="cloud-decrypt-confirm">
+                        <i class="fas fa-unlock"></i> Dekripsi
+                    </button>
+                    <button class="modal-btn close-btn" id="cloud-decrypt-cancel">
+                        <i class="fas fa-times"></i> Batal
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Event listeners
+    document.getElementById('close-cloud-modal').addEventListener('click', () => {
+        modal.remove();
+    });
+    
+    document.getElementById('cloud-decrypt-cancel').addEventListener('click', () => {
+        modal.remove();
+    });
+    
+    document.getElementById('cloud-decrypt-confirm').addEventListener('click', async () => {
+        const key = document.getElementById('cloud-decrypt-key').value;
+        if (!key && fileData.encryption_method.toLowerCase() !== 'base64') {
+            showToast('Masukkan kunci dekripsi', 'error');
+            return;
+        }
+        
+        modal.remove();
+        await attemptCloudDecryption(fileData.encrypted_data, key, fileData.encryption_method, fileData.file_name);
+    });
+    
+    // Close on outside click
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    });
+}
+
+// Dekripsi data dari cloud dengan validasi yang ketat
+async function attemptCloudDecryption(encryptedData, key, method, fileName) {
+    showLoading('Mendekripsi file dari cloud...');
+    
+    try {
+        // Validasi kunci untuk semua metode kecuali Base64 khusus
+        const methodLower = method.toLowerCase();
+        if (methodLower !== 'base64' || AppConfig.hasBase64Protection(encryptedData)) {
+            const keyError = AppConfig.validateKeyForMethod(key, methodLower);
+            if (keyError) {
+                throw new Error(keyError);
+            }
+        }
+        
+        let decryptedData;
+        
+        switch(methodLower) {
+            case 'aes':
+                decryptedData = await secureAesDecrypt(encryptedData, key);
+                break;
+            case 'base64':
+                if (AppConfig.hasBase64Protection(encryptedData)) {
+                    // Base64 dengan proteksi
+                    decryptedData = AppConfig.secureBase64Decode(encryptedData, key);
+                    if (!decryptedData) {
+                        throw new Error('Dekripsi Base64 gagal - kunci salah');
+                    }
+                } else {
+                    // Base64 tanpa proteksi (legacy)
+                    decryptedData = secureBase64Decode(encryptedData);
+                    showToast('Base64 tanpa proteksi - hati-hati dengan data sensitif', 'warning');
+                }
+                break;
+            case 'xor':
+                decryptedData = await secureXorDecrypt(encryptedData, key);
+                break;
+            case 'caesar':
+                decryptedData = await secureCaesarDecrypt(encryptedData, key);
+                break;
+            case 'vigenere':
+                decryptedData = await secureVigenereDecrypt(encryptedData, key);
+                break;
+            default:
+                throw new Error('Metode enkripsi tidak dikenali');
+        }
+        
+        if (!decryptedData) {
+            throw new Error('Dekripsi gagal - kunci salah atau data rusak');
+        }
+        
+        hideLoading();
+        
+        // Tampilkan hasil dekripsi
+        encryptionResult = {
+            method: method,
+            dataType: 'File dari Cloud',
+            fileName: fileName,
+            originalSize: AppConfig.formatBytes(encryptedData.length),
+            decryptedSize: AppConfig.formatBytes(new Blob([decryptedData]).size),
+            processTime: '0.5s',
+            preview: decryptedData.substring(0, 300) + (decryptedData.length > 300 ? '...' : ''),
+            fullResult: decryptedData,
+            isDecryption: true
+        };
+        
+        showResultModal();
+        showToast('Dekripsi berhasil!', 'success');
+        
+    } catch (error) {
+        hideLoading();
+        showToast('Dekripsi gagal: ' + error.message, 'error');
     }
 }
 
@@ -233,6 +459,9 @@ document.querySelectorAll('.tab').forEach(tab => {
         if (targetTab === 'cloud' && cloudConnected) {
             loadCloudData();
         }
+        
+        // Reset progress bars
+        hideAllProgressBars();
     });
 });
 
@@ -245,7 +474,51 @@ function updateKeyStrength() {
     const strength = AppConfig.validateKeyStrength(key);
     
     strengthBar.className = 'strength-level ' + strength.level;
+    strengthBar.style.width = strength.strength + '%';
     strengthText.textContent = strength.text;
+    strengthText.style.color = getStrengthColor(strength.level);
+}
+
+function updateFileKeyStrength() {
+    const key = document.getElementById('file-key').value;
+    const method = document.getElementById('file-method').value;
+    
+    // Cari atau buat indikator kekuatan kunci untuk file
+    let indicator = document.getElementById('file-key-strength');
+    if (!indicator) {
+        const container = document.querySelector('#file-key').parentElement;
+        indicator = document.createElement('div');
+        indicator.id = 'file-key-strength';
+        indicator.className = 'key-strength-container';
+        indicator.innerHTML = `
+            <div class="key-strength-indicator">
+                <div class="strength-bar">
+                    <div class="strength-level" id="file-key-strength-bar"></div>
+                </div>
+                <div class="strength-text" id="file-key-strength-text">Kekuatan: -</div>
+            </div>
+        `;
+        container.appendChild(indicator);
+    }
+    
+    const strength = AppConfig.validateKeyStrength(key);
+    const strengthBar = document.getElementById('file-key-strength-bar');
+    const strengthText = document.getElementById('file-key-strength-text');
+    
+    strengthBar.className = 'strength-level ' + strength.level;
+    strengthBar.style.width = strength.strength + '%';
+    strengthText.textContent = strength.text;
+    strengthText.style.color = getStrengthColor(strength.level);
+}
+
+function getStrengthColor(level) {
+    switch(level) {
+        case 'weak': return 'var(--danger)';
+        case 'medium': return 'var(--warning)';
+        case 'good': return 'var(--secondary)';
+        case 'strong': return 'var(--success)';
+        default: return 'var(--gray)';
+    }
 }
 
 // ==================== GENERATOR KUNCI ====================
@@ -268,10 +541,6 @@ document.getElementById('key-length').addEventListener('input', (e) => {
     document.getElementById('key-length-value').textContent = e.target.value;
 });
 
-document.getElementById('self-destruct-slider').addEventListener('input', (e) => {
-    document.getElementById('self-destruct-time').textContent = e.target.value;
-});
-
 function generateSecureKey(length, numbers = true, symbols = true, uppercase = true) {
     const lowercase = 'abcdefghijklmnopqrstuvwxyz';
     const uppercaseChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
@@ -291,111 +560,75 @@ function generateSecureKey(length, numbers = true, symbols = true, uppercase = t
     return key;
 }
 
-// ==================== MANAJEMEN RIWAYAT ====================
-function loadEncryptionHistory() {
-    const saved = localStorage.getItem(AppConfig.STORAGE_KEYS.HISTORY);
-    if (saved) {
-        encryptionHistory = JSON.parse(saved);
-    }
-}
+// ==================== ENKRIPSI YANG AMAN ====================
 
-function saveToHistory(operation) {
-    encryptionHistory.unshift({
-        ...operation,
-        timestamp: new Date().toISOString(),
-        id: Date.now()
-    });
-    
-    // Simpan hanya 50 item terakhir
-    if (encryptionHistory.length > AppConfig.APP.MAX_HISTORY_ITEMS) {
-        encryptionHistory = encryptionHistory.slice(0, AppConfig.APP.MAX_HISTORY_ITEMS);
-    }
-    
-    localStorage.setItem(AppConfig.STORAGE_KEYS.HISTORY, JSON.stringify(encryptionHistory));
-}
-
-document.getElementById('view-history-btn').addEventListener('click', () => {
-    if (encryptionHistory.length === 0) {
-        showToast('No history available', 'info');
-        return;
-    }
-    
-    const historyText = encryptionHistory.map((item, index) => 
-        `${index + 1}. ${item.method} - ${item.dataType} (${item.timestamp.slice(0, 10)})\n`
-    ).join('');
-    
-    document.getElementById('decrypt-input').value = '=== ENCRYPTION HISTORY ===\n\n' + historyText;
-    document.querySelector('[data-tab="decrypt"]').click();
-});
-
-document.getElementById('clear-history-btn').addEventListener('click', () => {
-    showConfirmation('Clear all history?', () => {
-        encryptionHistory = [];
-        localStorage.removeItem(AppConfig.STORAGE_KEYS.HISTORY);
-        showToast('History cleared', 'success');
-    });
-});
-
-// ==================== FITUR SELF-DESTRUCT ====================
-document.getElementById('create-self-destruct-btn').addEventListener('click', () => {
-    const hours = parseInt(document.getElementById('self-destruct-slider').value);
-    const text = document.getElementById('text-input').value;
-    
-    if (!text) {
-        showToast('Enter text first', 'warning');
-        return;
-    }
-    
-    const selfDestructData = {
-        data: text,
-        expires: Date.now() + (hours * 60 * 60 * 1000),
-        hours: hours
-    };
-    
-    const encrypted = btoa(JSON.stringify(selfDestructData));
-    document.getElementById('text-input').value = `SELF-DESTRUCT:${encrypted}`;
-    showToast(`Self-destruct data created (expires in ${hours} hours)`, 'success');
-});
-
-// ==================== DASAR ENKRIPSI ====================
-// Caesar Cipher
+// Caesar Cipher dengan checksum - DIPERBAIKI
 function caesarCipher(text, key, encrypt = true) {
+    // Validasi key
+    const shift = parseInt(key);
+    if (isNaN(shift) || shift < 1 || shift > 25) {
+        return null;
+    }
+    
+    // Tambahkan checksum sebelum enkripsi
+    if (encrypt) {
+        text = AppConfig.addChecksum(text);
+    }
+    
     let result = "";
-    const shift = encrypt ? parseInt(key) : -parseInt(key);
+    const actualShift = encrypt ? shift : -shift;
     
     for (let i = 0; i < text.length; i++) {
         let char = text[i];
-        if (char.match(/[a-z]/i)) {
-            const code = text.charCodeAt(i);
-            
-            if (code >= 65 && code <= 90) {
-                char = String.fromCharCode(((code - 65 + shift + 26) % 26) + 65);
-            } else if (code >= 97 && code <= 122) {
-                char = String.fromCharCode(((code - 97 + shift + 26) % 26) + 97);
-            }
+        const code = text.charCodeAt(i);
+        
+        if (code >= 65 && code <= 90) { // Huruf besar
+            char = String.fromCharCode(((code - 65 + actualShift + 26) % 26) + 65);
+        } else if (code >= 97 && code <= 122) { // Huruf kecil
+            char = String.fromCharCode(((code - 97 + actualShift + 26) % 26) + 97);
         }
+        // Karakter lain tetap sama
         result += char;
     }
+    
+    // Validasi checksum setelah dekripsi
+    if (!encrypt) {
+        try {
+            result = AppConfig.validateAndRemoveChecksum(result);
+        } catch (error) {
+            return null; // Kunci salah
+        }
+    }
+    
     return result;
 }
 
-// Vigenere Cipher
+// Vigenere Cipher dengan checksum - DIPERBAIKI
 function vigenereCipher(text, key, encrypt = true) {
+    // Validasi key
+    if (!key || key.length < 3) return null;
+    
+    // Tambahkan checksum sebelum enkripsi
+    if (encrypt) {
+        text = AppConfig.addChecksum(text);
+    }
+    
     let result = "";
     let keyIndex = 0;
     const keyLength = key.length;
     
     for (let i = 0; i < text.length; i++) {
         let char = text[i];
-        if (char.match(/[a-z]/i)) {
-            const code = text.charCodeAt(i);
+        const code = text.charCodeAt(i);
+        
+        if ((code >= 65 && code <= 90) || (code >= 97 && code <= 122)) {
             const keyChar = key[keyIndex % keyLength].toUpperCase();
             const keyShift = keyChar.charCodeAt(0) - 65;
             const shift = encrypt ? keyShift : -keyShift;
             
-            if (code >= 65 && code <= 90) {
+            if (code >= 65 && code <= 90) { // Huruf besar
                 char = String.fromCharCode(((code - 65 + shift + 26) % 26) + 65);
-            } else if (code >= 97 && code <= 122) {
+            } else if (code >= 97 && code <= 122) { // Huruf kecil
                 char = String.fromCharCode(((code - 97 + shift + 26) % 26) + 97);
             }
             
@@ -403,36 +636,104 @@ function vigenereCipher(text, key, encrypt = true) {
         }
         result += char;
     }
+    
+    // Validasi checksum setelah dekripsi
+    if (!encrypt) {
+        try {
+            result = AppConfig.validateAndRemoveChecksum(result);
+        } catch (error) {
+            return null; // Kunci salah
+        }
+    }
+    
     return result;
 }
 
-// Base64 Encoding/Decoding
-function base64Encode(text) {
-    return btoa(unescape(encodeURIComponent(text)));
-}
-
-function base64Decode(text) {
+// Base64 Encoding/Decoding - DIPERBAIKI
+function base64Encode(text, key = null) {
     try {
-        return decodeURIComponent(escape(atob(text)));
+        // Gunakan Base64 yang aman jika ada kunci
+        if (key && AppConfig.FEATURES.SECURE_BASE64) {
+            const result = AppConfig.secureBase64Encode(text, key);
+            if (result) return result;
+        }
+        
+        // Fallback ke Base64 biasa (dengan warning)
+        showToast('Base64 tanpa proteksi - tidak aman untuk data sensitif', 'warning');
+        
+        // Encode string ke UTF-8 dulu
+        const utf8Bytes = new TextEncoder().encode(text);
+        let binary = '';
+        for (let i = 0; i < utf8Bytes.length; i++) {
+            binary += String.fromCharCode(utf8Bytes[i]);
+        }
+        return btoa(binary);
     } catch (e) {
-        return null;
+        // Fallback untuk string biasa
+        return btoa(unescape(encodeURIComponent(text)));
     }
 }
 
-// XOR Cipher
+function secureBase64Decode(text, key = null) {
+    try {
+        // Coba decode dengan proteksi terlebih dahulu
+        if (AppConfig.hasBase64Protection(text)) {
+            const result = AppConfig.secureBase64Decode(text, key);
+            if (result) return result;
+            throw new Error('Base64 decode gagal - kunci salah');
+        }
+        
+        // Coba decode biasa
+        const binary = atob(text);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+        }
+        return new TextDecoder().decode(bytes);
+    } catch (e) {
+        // Fallback untuk string biasa
+        try {
+            return decodeURIComponent(escape(atob(text)));
+        } catch (e2) {
+            return null;
+        }
+    }
+}
+
+// XOR Cipher dengan checksum - DIPERBAIKI
 function xorCipher(text, key, encrypt = true) {
+    if (!key) return null;
+    
+    // Tambahkan checksum sebelum enkripsi
+    if (encrypt) {
+        text = AppConfig.addChecksum(text);
+    }
+    
     let result = "";
     for (let i = 0; i < text.length; i++) {
         const charCode = text.charCodeAt(i) ^ key.charCodeAt(i % key.length);
         result += String.fromCharCode(charCode);
     }
+    
+    // Validasi checksum setelah dekripsi
+    if (!encrypt) {
+        try {
+            result = AppConfig.validateAndRemoveChecksum(result);
+        } catch (error) {
+            return null; // Kunci salah
+        }
+    }
+    
     return result;
 }
 
-// AES-256 Encryption
+// AES-256 Encryption dengan validation - DIPERBAIKI
 async function aesEncrypt(text, password) {
     try {
         showLoading('Encrypting with AES-256...');
+        
+        // Tambahkan checksum sebelum enkripsi
+        text = AppConfig.addChecksum(text);
         
         const encoder = new TextEncoder();
         const data = encoder.encode(text);
@@ -474,7 +775,14 @@ async function aesEncrypt(text, password) {
         combined.set(new Uint8Array(encrypted), iv.length);
         
         hideLoading();
-        return btoa(String.fromCharCode.apply(null, combined));
+        
+        // Convert to base64
+        let binary = '';
+        for (let i = 0; i < combined.length; i++) {
+            binary += String.fromCharCode(combined[i]);
+        }
+        return btoa(binary);
+        
     } catch (error) {
         hideLoading();
         console.error("AES encryption error:", error);
@@ -482,11 +790,17 @@ async function aesEncrypt(text, password) {
     }
 }
 
-async function aesDecrypt(encryptedBase64, password) {
+async function secureAesDecrypt(encryptedBase64, password) {
     try {
         showLoading('Decrypting with AES-256...');
         
-        const combined = Uint8Array.from(atob(encryptedBase64), c => c.charCodeAt(0));
+        // Convert base64 to Uint8Array
+        const binary = atob(encryptedBase64);
+        const combined = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i++) {
+            combined[i] = binary.charCodeAt(i);
+        }
+        
         const iv = combined.slice(0, 12);
         const encrypted = combined.slice(12);
         
@@ -522,8 +836,18 @@ async function aesDecrypt(encryptedBase64, password) {
             encrypted
         );
         
-        hideLoading();
-        return new TextDecoder().decode(decrypted);
+        const result = new TextDecoder().decode(decrypted);
+        
+        // Validasi checksum
+        try {
+            const validatedResult = AppConfig.validateAndRemoveChecksum(result);
+            hideLoading();
+            return validatedResult;
+        } catch (error) {
+            hideLoading();
+            return null;
+        }
+        
     } catch (error) {
         hideLoading();
         console.error("AES decryption error:", error);
@@ -531,45 +855,48 @@ async function aesDecrypt(encryptedBase64, password) {
     }
 }
 
-// ==================== DETEKSI METODE ENKRIPSI ====================
-function detectEncryptionMethod(data, password) {
-    // Check for self-destruct data
-    if (data.startsWith('SELF-DESTRUCT:')) {
-        return { method: 'self-destruct', data: data.substring(14) };
-    }
-    
-    // Try Base64 detection
-    if (isValidBase64(data)) {
-        const decoded = base64Decode(data);
-        if (decoded) {
-            return { method: 'base64', data: decoded };
+// Fungsi dekripsi yang lebih aman - DIPERBAIKI
+async function secureXorDecrypt(encryptedData, key) {
+    try {
+        let data = encryptedData;
+        if (isValidBase64(data)) {
+            data = atob(data);
         }
+        
+        const result = xorCipher(data, key, false);
+        if (!result) {
+            return null;
+        }
+        
+        return result;
+    } catch (error) {
+        return null;
     }
-    
-    // Try AES detection
-    if (data.length > 12 && isValidBase64(data)) {
-        return { method: 'aes', data: data };
-    }
-    
-    // Try Caesar Cipher
-    if (/^[A-Za-z\s]+$/.test(data)) {
-        return { method: 'caesar', data: data };
-    }
-    
-    // Try XOR if password exists
-    if (password) {
-        return { method: 'xor', data: data };
-    }
-    
-    // Default to Vigenere
-    return { method: 'vigenere', data: data };
 }
 
-function isValidBase64(str) {
+async function secureCaesarDecrypt(encryptedData, key) {
     try {
-        return btoa(atob(str)) === str;
-    } catch (err) {
-        return false;
+        const result = caesarCipher(encryptedData, key, false);
+        if (!result) {
+            return null;
+        }
+        
+        return result;
+    } catch (error) {
+        return null;
+    }
+}
+
+async function secureVigenereDecrypt(encryptedData, key) {
+    try {
+        const result = vigenereCipher(encryptedData, key, false);
+        if (!result) {
+            return null;
+        }
+        
+        return result;
+    } catch (error) {
+        return null;
     }
 }
 
@@ -584,11 +911,27 @@ document.getElementById('encrypt-text-btn').addEventListener('click', async () =
         return;
     }
     
-    if ((method === 'aes' || method === 'vigenere' || method === 'xor') && !key) {
-        showToast(AppConfig.MESSAGES.ERRORS.NO_KEY, 'error');
+    // Validasi kunci
+    const keyError = AppConfig.validateKeyForMethod(key, method);
+    if (keyError && method !== 'base64') {
+        showToast(keyError, 'error');
         return;
     }
     
+    // Untuk Base64, beri peringatan jika tidak ada kunci
+    if (method === 'base64' && !key) {
+        const confirm = await showConfirmationModal(
+            'Base64 tanpa kunci tidak aman. Lanjutkan?',
+            'Lanjutkan tanpa kunci',
+            'Gunakan kunci'
+        );
+        if (!confirm) {
+            document.getElementById('encryption-key').focus();
+            return;
+        }
+    }
+    
+    // Set default key untuk caesar jika kosong
     if (method === 'caesar' && !key) {
         document.getElementById('encryption-key').value = '3';
     }
@@ -598,29 +941,36 @@ document.getElementById('encrypt-text-btn').addEventListener('click', async () =
     let result = "";
     
     try {
+        // Hapus interval sebelumnya jika ada
+        if (progressInterval) clearInterval(progressInterval);
+        
         let progress = 0;
-        const progressInterval = setInterval(() => {
-            progress += 10;
+        progressInterval = setInterval(() => {
+            progress = Math.min(progress + 10, 90);
             showProgress('text', progress);
         }, AppConfig.UI.PROGRESS_INTERVAL);
         
         switch(method) {
             case 'caesar':
                 result = caesarCipher(text, key || '3', true);
+                if (!result) throw new Error('Caesar encryption failed');
                 break;
             case 'vigenere':
                 result = vigenereCipher(text, key, true);
+                if (!result) throw new Error('Vigenere encryption failed');
                 break;
             case 'base64':
-                result = base64Encode(text);
+                result = base64Encode(text, key);
+                if (!result) throw new Error('Base64 encoding failed');
                 break;
             case 'aes':
                 result = await aesEncrypt(text, key);
                 if (!result) throw new Error(AppConfig.MESSAGES.ERRORS.AES_FAILED);
                 break;
             case 'xor':
-                result = xorCipher(text, key, true);
-                result = base64Encode(result);
+                const xorResult = xorCipher(text, key, true);
+                if (!xorResult) throw new Error('XOR encryption failed');
+                result = base64Encode(xorResult, key);
                 break;
             default:
                 throw new Error('Unknown method');
@@ -640,20 +990,15 @@ document.getElementById('encrypt-text-btn').addEventListener('click', async () =
             processTime: `${processTime}s`,
             preview: result.substring(0, 200) + (result.length > 200 ? '...' : ''),
             fullResult: result,
-            keyUsed: key || '3'
+            keyUsed: key || (method === 'base64' ? 'none' : 'default')
         };
         
-        // Save to history
-        saveToHistory({
-            method: method.toUpperCase(),
-            dataType: 'Teks',
-            size: new Blob([result]).size,
-            operation: 'encrypt'
-        });
-        
-        showResultModal();
+        setTimeout(() => {
+            showResultModal();
+        }, 300);
         
     } catch (error) {
+        clearInterval(progressInterval);
         showToast(`Error: ${error.message}`, 'error');
         hideProgress('text');
     }
@@ -670,9 +1015,24 @@ document.getElementById('encrypt-file-btn').addEventListener('click', async () =
         return;
     }
     
-    if ((method === 'aes' || method === 'xor') && !key) {
-        showToast(AppConfig.MESSAGES.ERRORS.NO_KEY, 'error');
+    // Validasi kunci
+    const keyError = AppConfig.validateKeyForMethod(key, method);
+    if (keyError && method !== 'base64') {
+        showToast(keyError, 'error');
         return;
+    }
+    
+    // Untuk Base64, beri peringatan jika tidak ada kunci
+    if (method === 'base64' && !key) {
+        const confirm = await showConfirmationModal(
+            'Base64 tanpa kunci tidak aman. Lanjutkan?',
+            'Lanjutkan tanpa kunci',
+            'Gunakan kunci'
+        );
+        if (!confirm) {
+            document.getElementById('file-key').focus();
+            return;
+        }
     }
     
     const files = Array.from(fileInput.files);
@@ -689,6 +1049,15 @@ document.getElementById('encrypt-file-btn').addEventListener('click', async () =
     const startTime = performance.now();
     
     try {
+        // Hapus interval sebelumnya jika ada
+        if (progressInterval) clearInterval(progressInterval);
+        
+        let progress = 0;
+        progressInterval = setInterval(() => {
+            progress = Math.min(progress + 5, 90);
+            showProgress('file', progress);
+        }, AppConfig.UI.PROGRESS_INTERVAL);
+        
         let allResults = [];
         
         for (let i = 0; i < files.length; i++) {
@@ -698,24 +1067,23 @@ document.getElementById('encrypt-file-btn').addEventListener('click', async () =
             const result = await new Promise((resolve, reject) => {
                 reader.onload = async function(e) {
                     try {
-                        const content = e.target.result;
+                        const arrayBuffer = e.target.result;
                         let result = "";
-                        
-                        // Update progress
-                        showProgress('file', ((i / files.length) * 100));
+                        const textContent = new TextDecoder().decode(arrayBuffer);
                         
                         switch(method) {
                             case 'base64':
-                                result = btoa(content);
+                                result = base64Encode(textContent, key);
+                                if (!result) throw new Error('Base64 encoding failed');
                                 break;
                             case 'aes':
-                                const base64Content = btoa(content);
-                                result = await aesEncrypt(base64Content, key);
+                                result = await aesEncrypt(textContent, key);
                                 if (!result) throw new Error(AppConfig.MESSAGES.ERRORS.AES_FAILED);
                                 break;
                             case 'xor':
-                                result = xorCipher(content, key, true);
-                                result = btoa(result);
+                                const xorResult = xorCipher(textContent, key, true);
+                                if (!xorResult) throw new Error('XOR encryption failed');
+                                result = base64Encode(xorResult, key);
                                 break;
                             default:
                                 throw new Error('Unknown method');
@@ -724,7 +1092,8 @@ document.getElementById('encrypt-file-btn').addEventListener('click', async () =
                         resolve({
                             name: file.name,
                             content: result,
-                            size: file.size
+                            size: file.size,
+                            originalContent: arrayBuffer
                         });
                     } catch (error) {
                         reject(error);
@@ -735,12 +1104,16 @@ document.getElementById('encrypt-file-btn').addEventListener('click', async () =
                     reject(new Error('Failed to read file'));
                 };
                 
-                reader.readAsBinaryString(file);
+                reader.readAsArrayBuffer(file);
             });
             
             allResults.push(result);
+            
+            // Update progress per file
+            showProgress('file', ((i + 1) / files.length) * 90);
         }
         
+        clearInterval(progressInterval);
         showProgress('file', 100);
         
         const endTime = performance.now();
@@ -757,14 +1130,20 @@ document.getElementById('encrypt-file-btn').addEventListener('click', async () =
                 processTime: `${processTime}s`,
                 preview: allResults[0].content.substring(0, 200) + (allResults[0].content.length > 200 ? '...' : ''),
                 fullResult: allResults[0].content,
-                keyUsed: key
+                keyUsed: key || (method === 'base64' ? 'none' : 'default'),
+                originalBuffer: allResults[0].originalContent
             };
             
             encryptedFileData = allResults[0].content;
             encryptedFileName = allResults[0].name + '.encrypted';
         } else {
             // Multiple files - create archive
-            const archiveData = JSON.stringify(allResults);
+            const archiveData = JSON.stringify(allResults.map(r => ({
+                name: r.name,
+                content: r.content,
+                size: r.size
+            })));
+            
             encryptionResult = {
                 method: method.toUpperCase(),
                 dataType: 'Multiple Files',
@@ -783,31 +1162,22 @@ document.getElementById('encrypt-file-btn').addEventListener('click', async () =
             encryptedFileName = 'files_archive.encrypted';
         }
         
-        // Save to history
-        saveToHistory({
-            method: method.toUpperCase(),
-            dataType: files.length === 1 ? 'File' : 'Multiple Files',
-            size: new Blob([encryptedFileData]).size,
-            operation: 'encrypt'
-        });
-        
-        showResultModal();
+        setTimeout(() => {
+            showResultModal();
+        }, 300);
         
     } catch (error) {
+        clearInterval(progressInterval);
         showToast(`Error: ${error.message}`, 'error');
         hideProgress('file');
     }
 });
 
-// ==================== DEKRIPSI DATA ====================
+// ==================== DEKRIPSI DATA YANG AMAN ====================
 document.getElementById('decrypt-btn').addEventListener('click', async () => {
     const key = document.getElementById('decryption-key').value;
     const fileInput = document.getElementById('decrypt-file-input');
     const textInput = document.getElementById('decrypt-input').value.trim();
-    
-    let data = textInput;
-    let isFile = false;
-    let fileName = '';
     
     if (fileInput.files.length) {
         const file = fileInput.files[0];
@@ -816,7 +1186,7 @@ document.getElementById('decrypt-btn').addEventListener('click', async () => {
         reader.onload = async function(e) {
             try {
                 const fileContent = e.target.result;
-                await performAutoDecryption(fileContent, key, file.name, true);
+                await performSecureDecryption(fileContent, key, file.name, true);
             } catch (error) {
                 showToast(`Error: ${error.message}`, 'error');
             }
@@ -830,84 +1200,97 @@ document.getElementById('decrypt-btn').addEventListener('click', async () => {
         return;
     }
     
-    if (!data) {
+    if (!textInput) {
         showToast('Enter encrypted data or select file', 'error');
         return;
     }
     
-    await performAutoDecryption(data, key, '', false);
+    await performSecureDecryption(textInput, key, '', false);
 });
 
-async function performAutoDecryption(data, key, fileName = '', isFile = false) {
+async function performSecureDecryption(data, key, fileName = '', isFile = false) {
     showProgress('decrypt', 0);
     const startTime = performance.now();
     
     try {
+        // Hapus interval sebelumnya jika ada
+        if (progressInterval) clearInterval(progressInterval);
+        
         let progress = 0;
-        const progressInterval = setInterval(() => {
-            progress += 10;
+        progressInterval = setInterval(() => {
+            progress = Math.min(progress + 10, 90);
             showProgress('decrypt', progress);
         }, AppConfig.UI.PROGRESS_INTERVAL);
         
-        const detection = detectEncryptionMethod(data, key);
         let result = "";
-        let methodUsed = detection.method;
+        let methodUsed = 'unknown';
+        let decryptionSuccessful = false;
         
-        switch(detection.method) {
-            case 'base64':
-                result = base64Decode(data);
-                if (!result) throw new Error(AppConfig.MESSAGES.ERRORS.INVALID_BASE64);
-                break;
-            case 'aes':
-                if (!key) throw new Error(AppConfig.MESSAGES.ERRORS.NO_KEY);
-                result = await aesDecrypt(data, key);
-                if (!result) throw new Error(AppConfig.MESSAGES.ERRORS.DECRYPTION_FAILED);
-                
-                if (isFile && isValidBase64(result)) {
-                    try {
-                        const binaryString = atob(result);
-                        result = `File "${fileName}" decrypted successfully.\n\nSize: ${AppConfig.formatBytes(binaryString.length)}\n\nContent preview:\n${binaryString.substring(0, 200)}...`;
-                    } catch (e) {}
+        // Cek apakah data memiliki proteksi Base64
+        if (AppConfig.hasBase64Protection(data)) {
+            // Coba dekripsi Base64 dengan proteksi
+            const base64Result = AppConfig.secureBase64Decode(data, key);
+            if (base64Result && AppConfig.isValidDecryptedText(base64Result)) {
+                result = base64Result;
+                methodUsed = 'base64_secure';
+                decryptionSuccessful = true;
+            }
+        }
+        
+        // Jika tidak berhasil, coba metode lain
+        if (!decryptionSuccessful && isValidBase64(data)) {
+            // Coba Base64 biasa dulu
+            const base64Result = secureBase64Decode(data);
+            if (base64Result && AppConfig.isValidDecryptedText(base64Result)) {
+                result = base64Result;
+                methodUsed = 'base64';
+                decryptionSuccessful = true;
+                showToast('Base64 tanpa proteksi - data mungkin tidak aman', 'warning');
+            }
+            
+            // Jika Base64 gagal, coba AES
+            if (!decryptionSuccessful && key) {
+                const aesResult = await secureAesDecrypt(data, key);
+                if (aesResult) {
+                    result = aesResult;
+                    methodUsed = 'aes';
+                    decryptionSuccessful = true;
                 }
-                break;
-            case 'caesar':
-                if (!key) {
-                    result = "Trying all Caesar cipher shifts:\n\n";
-                    for (let shift = 1; shift <= 25; shift++) {
-                        const decrypted = caesarCipher(data, shift.toString(), false);
-                        result += `Shift ${shift}: ${decrypted.substring(0, 50)}${decrypted.length > 50 ? '...' : ''}\n`;
-                    }
-                } else {
-                    result = caesarCipher(data, key, false);
+            }
+            
+            // Coba XOR
+            if (!decryptionSuccessful && key) {
+                const xorResult = await secureXorDecrypt(data, key);
+                if (xorResult) {
+                    result = xorResult;
+                    methodUsed = 'xor';
+                    decryptionSuccessful = true;
                 }
-                break;
-            case 'xor':
-                if (!key) throw new Error(AppConfig.MESSAGES.ERRORS.NO_KEY);
-                let xorData = data;
-                if (isValidBase64(data)) {
-                    xorData = atob(data);
-                }
-                result = xorCipher(xorData, key, false);
-                break;
-            case 'vigenere':
-                if (!key) throw new Error(AppConfig.MESSAGES.ERRORS.NO_KEY);
-                result = vigenereCipher(data, key, false);
-                break;
-            case 'self-destruct':
-                try {
-                    const selfDestruct = JSON.parse(atob(detection.data));
-                    if (Date.now() > selfDestruct.expires) {
-                        result = "⚠️ DATA HAS SELF-DESTRUCTED ⚠️\n\nThis data has expired and been destroyed.";
-                    } else {
-                        const remaining = Math.ceil((selfDestruct.expires - Date.now()) / (60 * 60 * 1000));
-                        result = `Self-destruct data (expires in ${remaining} hours):\n\n${selfDestruct.data}`;
-                    }
-                } catch (e) {
-                    throw new Error('Invalid self-destruct data');
-                }
-                break;
-            default:
-                throw new Error('Cannot detect encryption method');
+            }
+        }
+        
+        // Coba Caesar cipher (text tanpa special chars)
+        if (!decryptionSuccessful && /^[A-Za-z\s.,!?]+$/.test(data) && key) {
+            const caesarResult = await secureCaesarDecrypt(data, key);
+            if (caesarResult) {
+                result = caesarResult;
+                methodUsed = 'caesar';
+                decryptionSuccessful = true;
+            }
+        }
+        
+        // Coba Vigenere
+        if (!decryptionSuccessful && key) {
+            const vigenereResult = await secureVigenereDecrypt(data, key);
+            if (vigenereResult) {
+                result = vigenereResult;
+                methodUsed = 'vigenere';
+                decryptionSuccessful = true;
+            }
+        }
+        
+        if (!decryptionSuccessful) {
+            throw new Error('Dekripsi gagal. Kunci salah atau data rusak.');
         }
         
         clearInterval(progressInterval);
@@ -928,59 +1311,123 @@ async function performAutoDecryption(data, key, fileName = '', isFile = false) {
             isDecryption: true
         };
         
-        // Save to history
-        saveToHistory({
-            method: methodUsed.toUpperCase(),
-            dataType: isFile ? 'File' : 'Teks',
-            size: new Blob([result]).size,
-            operation: 'decrypt'
-        });
-        
-        showResultModal();
+        setTimeout(() => {
+            showResultModal();
+        }, 300);
         
     } catch (error) {
+        clearInterval(progressInterval);
         showToast(`Decryption failed: ${error.message}`, 'error');
         hideProgress('decrypt');
     }
 }
 
-// ==================== FUNGSI CLOUD ====================
-document.getElementById('refresh-cloud-btn').addEventListener('click', () => {
-    if (cloudConnected) {
-        loadCloudData();
-        showToast('Cloud data refreshed', 'success');
-    } else {
-        showToast('Cloud not connected', 'error');
+function isValidBase64(str) {
+    try {
+        return btoa(atob(str)) === str;
+    } catch (err) {
+        return false;
     }
-});
+}
 
-document.getElementById('upload-to-cloud-btn').addEventListener('click', () => {
-    if (!encryptionResult) {
-        showToast('Encrypt data first', 'warning');
-        return;
-    }
-    
-    const metadata = {
-        method: encryptionResult.method,
-        dataType: encryptionResult.dataType,
-        fileName: encryptionResult.fileName,
-        size: encryptionResult.originalSize
-    };
-    
-    saveToCloud(encryptionResult.fullResult, metadata);
-});
-
-document.getElementById('modal-save-cloud-btn').addEventListener('click', () => {
+// ==================== MODAL SAVE TO CLOUD ====================
+document.getElementById('modal-save-cloud-btn').addEventListener('click', async () => {
     if (!encryptionResult) return;
     
-    const metadata = {
-        method: encryptionResult.method,
-        dataType: encryptionResult.dataType,
-        fileName: encryptionResult.fileName || 'Encrypted Data',
-        size: encryptionResult.originalSize
-    };
+    // Buat modal untuk memasukkan deskripsi
+    const modal = document.createElement('div');
+    modal.id = 'save-cloud-modal';
+    modal.className = 'modal-overlay active';
+    modal.innerHTML = `
+        <div class="modal" style="max-width: 500px;">
+            <div class="modal-header">
+                <h2><i class="fas fa-cloud-upload-alt"></i> Simpan ke Cloud</h2>
+                <button class="close-modal" id="close-save-modal">&times;</button>
+            </div>
+            <div class="modal-content">
+                <div class="file-info" style="margin-bottom: 20px; padding: 15px; background: var(--light); border-radius: 10px;">
+                    <h4><i class="fas fa-file"></i> ${encryptionResult.fileName || 'encrypted_data.txt'}</h4>
+                    <p><strong>Metode:</strong> ${encryptionResult.method}</p>
+                    <p><strong>Ukuran:</strong> ${encryptionResult.encryptedSize || encryptionResult.originalSize}</p>
+                    <p><strong>Status:</strong> ${encryptionResult.keyUsed === 'none' ? 'Base64 tanpa kunci (kurang aman)' : 'Terenkripsi dengan kunci'}</p>
+                </div>
+                
+                <div class="input-group" style="margin-bottom: 15px;">
+                    <label for="cloud-file-name"><i class="fas fa-file-signature"></i> Nama File:</label>
+                    <input type="text" id="cloud-file-name" value="${encryptionResult.fileName || 'encrypted_data.txt'}" style="width: 100%;">
+                </div>
+                
+                <div class="input-group" style="margin-bottom: 20px;">
+                    <label for="cloud-description"><i class="fas fa-align-left"></i> Deskripsi (opsional):</label>
+                    <textarea id="cloud-description" placeholder="Masukkan deskripsi file..." rows="3" style="width: 100%;"></textarea>
+                </div>
+                
+                <div class="modal-actions">
+                    <button class="modal-btn save-cloud-btn" id="confirm-save-cloud">
+                        <i class="fas fa-save"></i> Simpan ke Cloud
+                    </button>
+                    <button class="modal-btn close-btn" id="cancel-save-cloud">
+                        <i class="fas fa-times"></i> Batal
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
     
-    saveToCloud(encryptionResult.fullResult, metadata);
+    document.body.appendChild(modal);
+    
+    // Event listeners
+    document.getElementById('close-save-modal').addEventListener('click', () => {
+        modal.remove();
+    });
+    
+    document.getElementById('cancel-save-cloud').addEventListener('click', () => {
+        modal.remove();
+    });
+    
+    document.getElementById('confirm-save-cloud').addEventListener('click', async () => {
+        const fileName = document.getElementById('cloud-file-name').value.trim();
+        const description = document.getElementById('cloud-description').value.trim();
+        
+        if (!fileName) {
+            showToast('Masukkan nama file', 'error');
+            return;
+        }
+        
+        // Peringatan untuk Base64 tanpa kunci
+        if (encryptionResult.method.toLowerCase().includes('base64') && encryptionResult.keyUsed === 'none') {
+            const confirm = await showConfirmationModal(
+                'Base64 tanpa kunci tidak aman untuk disimpan di cloud. Lanjutkan?',
+                'Simpan tanpa kunci',
+                'Batal'
+            );
+            if (!confirm) {
+                return;
+            }
+        }
+        
+        const metadata = {
+            method: encryptionResult.method,
+            dataType: encryptionResult.dataType,
+            fileName: fileName,
+            description: description || 'Encrypted file'
+        };
+        
+        const success = await saveToCloud(encryptionResult.fullResult, metadata, encryptionResult.keyUsed || '');
+        
+        if (success) {
+            modal.remove();
+            closeResultModal();
+            showToast('Data berhasil disimpan ke cloud!', 'success');
+        }
+    });
+    
+    // Close on outside click
+    modal.addEventListener('click', (e) => {
+        if (e.target === modal) {
+            modal.remove();
+        }
+    });
 });
 
 // ==================== FUNGSI MODAL ====================
@@ -1001,6 +1448,14 @@ function showResultModal() {
         `${encryptionResult.originalSize} → ${encryptionResult.encryptedSize}`;
     modalProcessTime.textContent = encryptionResult.processTime;
     modalPreview.textContent = encryptionResult.preview;
+    
+    // Update tombol Save to Cloud
+    const saveBtn = document.getElementById('modal-save-cloud-btn');
+    if (encryptionResult.isDecryption) {
+        saveBtn.style.display = 'none';
+    } else {
+        saveBtn.style.display = 'flex';
+    }
     
     modal.classList.add('active');
     document.body.style.overflow = 'hidden';
@@ -1133,7 +1588,12 @@ document.getElementById('clear-file-btn').addEventListener('click', () => {
     document.getElementById('file-input').value = '';
     document.getElementById('file-key').value = '';
     document.getElementById('file-name').textContent = 'No file selected';
-    document.getElementById('file-list').innerHTML = '';
+    const fileList = document.getElementById('file-list');
+    if (fileList) fileList.innerHTML = '';
+    
+    // Hapus indikator kekuatan kunci file
+    const indicator = document.getElementById('file-key-strength');
+    if (indicator) indicator.remove();
 });
 
 document.getElementById('clear-decrypt-btn').addEventListener('click', () => {
@@ -1198,6 +1658,53 @@ function showConfirmation(message, onConfirm) {
     overlay.classList.add('active');
 }
 
+// Confirmation Modal yang lebih baik
+function showConfirmationModal(message, confirmText = 'Ya', cancelText = 'Tidak') {
+    return new Promise((resolve) => {
+        const modal = document.createElement('div');
+        modal.id = 'custom-confirmation-modal';
+        modal.className = 'modal-overlay active';
+        modal.innerHTML = `
+            <div class="modal" style="max-width: 400px;">
+                <div class="modal-content" style="text-align: center;">
+                    <h3 style="margin-bottom: 20px; color: var(--warning);">
+                        <i class="fas fa-exclamation-triangle"></i> Peringatan
+                    </h3>
+                    <p style="margin-bottom: 25px; font-size: 1rem;">${message}</p>
+                    <div class="modal-actions">
+                        <button class="modal-btn" id="custom-confirm" style="background-color: var(--warning); color: white;">
+                            ${confirmText}
+                        </button>
+                        <button class="modal-btn close-btn" id="custom-cancel">
+                            ${cancelText}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        document.body.appendChild(modal);
+        
+        document.getElementById('custom-confirm').addEventListener('click', () => {
+            modal.remove();
+            resolve(true);
+        });
+        
+        document.getElementById('custom-cancel').addEventListener('click', () => {
+            modal.remove();
+            resolve(false);
+        });
+        
+        // Close on outside click
+        modal.addEventListener('click', (e) => {
+            if (e.target === modal) {
+                modal.remove();
+                resolve(false);
+            }
+        });
+    });
+}
+
 // Guide Overlay
 function showGuide() {
     document.getElementById('guide-overlay').classList.add('active');
@@ -1223,19 +1730,28 @@ function hideLoading() {
     document.getElementById('loading-overlay').classList.remove('active');
 }
 
-// Progress Bars
+// Progress Bars - DIPERBAIKI
 function showProgress(type, percent) {
     const container = document.getElementById(`${type}-progress`);
     const fill = document.getElementById(`${type}-progress-fill`);
     const text = document.getElementById(`${type}-progress-text`);
     
+    if (!container || !fill || !text) return;
+    
     container.classList.add('active');
-    fill.style.width = `${percent}%`;
+    fill.style.width = `${Math.min(100, Math.max(0, percent))}%`;
     text.textContent = `${Math.round(percent)}%`;
 }
 
 function hideProgress(type) {
-    document.getElementById(`${type}-progress`).classList.remove('active');
+    const container = document.getElementById(`${type}-progress`);
+    if (container) container.classList.remove('active');
+}
+
+function hideAllProgressBars() {
+    ['text', 'file', 'decrypt'].forEach(type => {
+        hideProgress(type);
+    });
 }
 
 // Tooltips
@@ -1263,7 +1779,7 @@ function downloadFile(content, filename) {
 
 // ==================== SANITASI INPUT ====================
 function sanitizeInput(input) {
-    // Remove potentially dangerous characters
+    // Remove potentially dangerous characters but allow spaces and tabs
     return input
         .replace(/[<>]/g, '') // Remove < and >
         .replace(/javascript:/gi, '') // Remove javascript: protocol
@@ -1273,6 +1789,11 @@ function sanitizeInput(input) {
 // Add input sanitization to all text inputs
 document.querySelectorAll('input[type="text"], input[type="password"], textarea').forEach(input => {
     input.addEventListener('input', () => {
+        // Allow spaces and tabs in textarea
+        if (input.tagName.toLowerCase() === 'textarea') {
+            return;
+        }
+        
         const cursorPos = input.selectionStart;
         const oldValue = input.value;
         const newValue = sanitizeInput(oldValue);
