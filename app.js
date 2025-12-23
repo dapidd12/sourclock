@@ -1,5 +1,5 @@
 // ==================== VARIABEL GLOBAL ====================
-let supabase = null;
+let supabaseClient = null; // GANTI NAMA VARIABEL
 let currentTheme = 'light';
 let encryptionResult = null;
 let encryptedFileData = null;
@@ -73,8 +73,13 @@ async function initializeSupabase() {
     const config = AppConfig.getSupabaseConfig();
     
     try {
+        // Cek apakah library Supabase tersedia
+        if (typeof window.supabase === 'undefined') {
+            throw new Error('Supabase library not loaded');
+        }
+        
         // Gunakan service role key untuk bypass policy
-        supabase = window.supabase.createClient(config.url, config.serviceKey, {
+        supabaseClient = window.supabase.createClient(config.url, config.serviceKey, {
             auth: {
                 autoRefreshToken: false,
                 persistSession: false,
@@ -83,13 +88,19 @@ async function initializeSupabase() {
         });
         
         // Test koneksi dengan query sederhana
-        const { data, error } = await supabase
+        const { data, error } = await supabaseClient
             .from(config.table)
             .select('id')
             .limit(1);
         
-        if (error && !error.message.includes('does not exist')) {
+        if (error) {
             console.warn('Supabase connection test error:', error.message);
+            // Coba buat tabel jika belum ada
+            if (error.message.includes('does not exist')) {
+                await createTablesIfNotExist();
+            } else {
+                throw error;
+            }
         }
         
         cloudConnected = true;
@@ -107,6 +118,34 @@ async function initializeSupabase() {
     }
 }
 
+// Fungsi untuk membuat tabel jika belum ada
+async function createTablesIfNotExist() {
+    try {
+        const config = AppConfig.getSupabaseConfig();
+        
+        // Coba buat tabel files
+        const { error: tableError } = await supabaseClient.rpc('create_encrypted_files_table');
+        
+        if (tableError) {
+            console.log('Tabel files belum ada, akan dibuat secara manual...');
+            // Tabel akan dibuat otomatis melalui SQL di Supabase dashboard
+        }
+        
+        // Coba buat tabel keys
+        const { error: keyError } = await supabaseClient.rpc('create_encryption_keys_table');
+        
+        if (keyError) {
+            console.log('Tabel keys belum ada, akan dibuat secara manual...');
+            // Tabel akan dibuat otomatis melalui SQL di Supabase dashboard
+        }
+        
+        showToast('Database tables initialized', 'info');
+        
+    } catch (error) {
+        console.log('Table creation might need manual setup in Supabase dashboard');
+    }
+}
+
 function updateCloudStatus(connected) {
     const statusElement = document.getElementById('cloud-status');
     if (connected) {
@@ -121,12 +160,12 @@ function updateCloudStatus(connected) {
 }
 
 async function loadCloudData() {
-    if (!cloudConnected) return;
+    if (!cloudConnected || !supabaseClient) return;
     
     const config = AppConfig.getSupabaseConfig();
     
     try {
-        const { data, error } = await supabase
+        const { data, error } = await supabaseClient
             .from(config.table)
             .select('*')
             .order('created_at', { ascending: false });
@@ -186,7 +225,7 @@ function displayCloudData(data) {
 
 // Simpan data terenkripsi dan kunci ke database
 async function saveToCloud(encryptedData, metadata, encryptionKey) {
-    if (!cloudConnected) {
+    if (!cloudConnected || !supabaseClient) {
         showToast('Cloud not connected', 'error');
         return false;
     }
@@ -201,7 +240,7 @@ async function saveToCloud(encryptedData, metadata, encryptionKey) {
         }
         
         // Simpan file terenkripsi
-        const { data: fileData, error: fileError } = await supabase
+        const { data: fileData, error: fileError } = await supabaseClient
             .from(config.table)
             .insert([{
                 file_name: metadata.fileName || 'encrypted_data.txt',
@@ -217,7 +256,7 @@ async function saveToCloud(encryptedData, metadata, encryptionKey) {
         
         // Simpan kunci terenkripsi dengan referensi ke file
         if (fileData && fileData[0]) {
-            const { error: keyError } = await supabase
+            const { error: keyError } = await supabaseClient
                 .from(config.keysTable)
                 .insert([{
                     file_id: fileData[0].id,
@@ -241,7 +280,7 @@ async function saveToCloud(encryptedData, metadata, encryptionKey) {
 
 // Download dan coba dekripsi file dari cloud dengan UI yang lebih baik
 async function downloadFromCloud(id, method) {
-    if (!cloudConnected) {
+    if (!cloudConnected || !supabaseClient) {
         showToast('Cloud not connected', 'error');
         return;
     }
@@ -250,7 +289,7 @@ async function downloadFromCloud(id, method) {
     
     try {
         // Ambil data file
-        const { data: fileData, error: fileError } = await supabase
+        const { data: fileData, error: fileError } = await supabaseClient
             .from(config.table)
             .select('*')
             .eq('id', id)
